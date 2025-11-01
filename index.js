@@ -163,3 +163,73 @@ app.get("/room/:id", (req, res) => {
     });
   });
 });
+
+const dbGet = (db, sql, params) => new Promise((resolve, reject) => {
+    db.get(sql, params, (err, row) => {
+        if (err) return reject(err);
+        resolve(row);
+    });
+});
+const dbRun = (db, sql, params) => new Promise((resolve, reject) => {
+    db.run(sql, params, function(err) {
+        if (err) return reject(err);
+        resolve(this);
+    });
+});
+
+app.post("/reservations", verificarToken, async (req, res) => {
+  const { habitacionId, fecha_inicio, fecha_fin } = req.body;
+  const usuarioId = req.user.id;
+
+  if (!habitacionId || !fecha_inicio || !fecha_fin) {
+    return res.status(400).json({ error: "Todos los campos de reserva son requeridos." });
+  }
+
+  try {
+    const roomInfo = await dbGet(dbHotel, "SELECT * FROM habitaciones WHERE id = ?", [habitacionId]);
+
+    if (!roomInfo || roomInfo.disponible === 0) {
+      return res.status(404).json({ error: "Habitación no disponible o no encontrada." });
+    }
+
+    const inicio = new Date(fecha_inicio);
+    const fin = new Date(fecha_fin);
+    const diffTime = Math.abs(fin - inicio);
+    const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24)); 
+    if (diffDays <= 0) return res.status(400).json({ error: "Fechas de reserva inválidas." });
+
+    const precio_total = roomInfo.precio_noche * diffDays;
+
+    const reservationResult = await dbRun(
+      dbHotel,
+      `INSERT INTO reservas (habitacionId, usuarioId, fecha_inicio, fecha_fin, precio_total, estado)
+       VALUES (?, ?, ?, ?, ?, 'confirmada')`,
+      [habitacionId, usuarioId, fecha_inicio, fecha_fin, precio_total]
+    );
+
+    res.json({
+      mensaje: "Reserva creada y confirmada con éxito.",
+      reserva: { 
+        id: reservationResult.lastID, 
+        habitacionId, 
+        usuarioId, 
+        fecha_inicio, 
+        fecha_fin,
+        precio_total
+      }
+    });
+
+  } catch (error) {
+    console.error("Error en la creación de reserva:", error);
+    res.status(500).json({ error: "Error al procesar la reserva." });
+  }
+});
+
+app.get("/reservations/my", verificarToken, (req, res) => {
+  const usuarioId = req.user.id;
+
+  dbHotel.all("SELECT * FROM reservas WHERE usuarioId = ? ORDER BY fecha_inicio DESC", [usuarioId], (err, rows) => {
+    if (err) return res.status(500).json({ error: "Error al obtener tus reservas." });
+    res.json({ reservas: rows });
+  });
+});
