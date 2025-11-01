@@ -35,6 +35,20 @@ dbHotel.run(`
   )
 `);
 
+dbHotel.run(`
+  CREATE TABLE IF NOT EXISTS reservas (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    habitacionId INTEGER NOT NULL,
+    usuarioId INTEGER NOT NULL,
+    fecha_inicio TEXT NOT NULL,
+    fecha_fin TEXT NOT NULL,
+    estado TEXT DEFAULT 'pendiente', -- 'pendiente', 'confirmada', 'cancelada'
+    precio_total REAL NOT NULL,
+    FOREIGN KEY(habitacionId) REFERENCES habitaciones(id) ON DELETE RESTRICT,
+    FOREIGN KEY(usuarioId) REFERENCES usuarios(id) ON DELETE RESTRICT
+  )
+`);
+
 app.use(cors({
   origin: ["http://localhost:3000", "http://localhost:3001"],
   credentials: true
@@ -114,4 +128,38 @@ app.post("/login", (req, res) => {
       });
     }
   );
+});
+
+app.get("/rooms", (req, res) => {
+  // Opcionalmente filtrar por disponibilidad
+  const { disponible } = req.query; 
+  let sql = "SELECT * FROM habitaciones";
+  const params = [];
+
+  if (disponible !== undefined) {
+    sql += " WHERE disponible = ?";
+    params.push(disponible === 'true' || disponible === '1' ? 1 : 0);
+  }
+
+  dbHotel.all(sql, params, (err, rows) => {
+    if (err) return res.status(500).json({ error: "Error al obtener habitaciones." });
+    res.json({ 
+      habitaciones: rows.map(r => ({ ...r, disponible: r.disponible === 1 }))
+    });
+  });
+});
+
+app.get("/room/:id", (req, res) => {
+  const { id } = req.params;
+  dbHotel.get("SELECT * FROM habitaciones WHERE id = ?", [id], (err, row) => {
+    if (err) return res.status(500).json({ error: "Error al buscar habitación." });
+    if (!row) return res.status(404).json({ error: "Habitación no encontrada." });
+
+    res.json({
+      habitacion: {
+        ...row,
+        disponible: row.disponible === 1
+      }
+    });
+  });
 });
