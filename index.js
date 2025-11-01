@@ -49,3 +49,69 @@ app.get("/", (req, res) => {
 app.listen(PORT, () => {
   console.log(`Servidor de Hotel corriendo en http://localhost:${PORT}`);
 });
+
+const verificarToken = (req, res, next) => {
+  const token = req.cookies.token || req.headers['authorization']?.split(' ')[1];
+  if (!token) return res.status(401).json({ error: "Acceso denegado. Token requerido." });
+
+  jwt.verify(token, SECRET_KEY, (err, decoded) => {
+    if (err) return res.status(403).json({ error: "Token inválido o expirado." });
+    req.user = decoded; // { id, email, nombre, rol, ... }
+    next();
+  });
+};
+
+app.post("/register", (req, res) => {
+  const { email, telefono, nombre, contraseña } = req.body;
+  if (!email || !telefono || !nombre || !contraseña) {
+    return res.status(400).json({ error: "Todos los campos son obligatorios." });
+  }
+
+  dbHotel.get("SELECT * FROM usuarios WHERE email = ?", [email], (err, row) => {
+    if (err) return res.status(500).json({ error: "Error en la base de datos." });
+    if (row) return res.status(409).json({ error: "El correo ya está registrado." });
+
+    dbHotel.run(
+      "INSERT INTO usuarios (email, telefono, nombre, contraseña, rol) VALUES (?, ?, ?, ?, 'cliente')",
+      [email, telefono, nombre, contraseña],
+      function (err) {
+        if (err) return res.status(500).json({ error: "Error al registrar usuario." });
+
+        res.json({
+          mensaje: `¡Registro exitoso, ${nombre}!`,
+          usuario: { id: this.lastID, email, nombre, rol: 'cliente' }
+        });
+      }
+    );
+  });
+});
+
+app.post("/login", (req, res) => {
+  const { email, contraseña } = req.body;
+  if (!email || !contraseña) {
+    return res.status(400).json({ error: "Email y contraseña requeridos." });
+  }
+
+  dbHotel.get(
+    "SELECT * FROM usuarios WHERE email = ? AND contraseña = ?",
+    [email, contraseña],
+    (err, row) => {
+      if (err) return res.status(500).json({ error: "Error en el servidor." });
+      if (!row) return res.status(401).json({ error: "Credenciales incorrectas." });
+
+      const payload = {
+        id: row.id, 
+        email: row.email,
+        nombre: row.nombre,
+        rol: row.rol
+      };
+
+      const token = jwt.sign(payload, SECRET_KEY, { expiresIn: "8h" });
+      res.cookie("token", token, { httpOnly: true, secure: false, maxAge: 8 * 3600000 }); 
+      res.json({
+        mensaje: "Login exitoso",
+        usuario: payload
+      });
+    }
+  );
+});
