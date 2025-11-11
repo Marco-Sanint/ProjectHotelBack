@@ -4,9 +4,34 @@ const express = require('express');
 module.exports = ({ dbGet, dbRun, dbAll, verificarToken, soloAdmin }) => {
     const router = express.Router();
 
-    // --- RUTAS PÚBLICAS DE HABITACIONES (/rooms) ---
+    // Función auxiliar para deserializar los campos JSON
+    const formatRoom = (room) => {
+        if (!room) return null;
+        
+        // Mapea 1/0 a booleano
+        const disponible = room.disponible === 1;
+        
+        // Parsea los campos JSON (maneja null o strings vacías)
+        const caracteristicas = room.caracteristicas_json ? JSON.parse(room.caracteristicas_json) : null;
+        const imagenes = room.imagenes_json ? JSON.parse(room.imagenes_json) : [];
 
-    // GET /rooms - Obtener todas las habitaciones (con filtro)
+        // Retorna el objeto formateado para el Frontend
+        return {
+            id: room.id,
+            numero: room.numero,
+            tipo: room.tipo,
+            precio_noche: room.precio_noche,
+            descripcion: room.descripcion,
+            disponible,
+            // AÑADIDOS
+            caracteristicas,
+            imagenes,
+        };
+    };
+
+    // --- RUTAS PÚBLICAS DE HABITACIONES ---
+
+    // GET / - Obtener todas las habitaciones (con filtro)
     router.get("/", async (req, res) => {
         const { disponible } = req.query;
         let sql = "SELECT * FROM habitaciones";
@@ -19,39 +44,46 @@ module.exports = ({ dbGet, dbRun, dbAll, verificarToken, soloAdmin }) => {
 
         try {
             const rows = await dbAll(sql, params);
+            // USAMOS LA FUNCIÓN AUXILIAR
             res.json({
-                habitaciones: rows.map(r => ({ ...r, disponible: r.disponible === 1 }))
+                habitaciones: rows.map(formatRoom) 
             });
         } catch (err) {
             res.status(500).json({ error: "Error al obtener habitaciones." });
         }
     });
 
-    // GET /rooms/:id - Obtener una habitación por ID
+    // GET /:id - Obtener una habitación por ID
     router.get("/:id", async (req, res) => {
         const { id } = req.params;
         try {
             const row = await dbGet("SELECT * FROM habitaciones WHERE id = ?", [id]);
             if (!row) return res.status(404).json({ error: "Habitación no encontrada." });
 
-            res.json({ habitacion: { ...row, disponible: row.disponible === 1 } });
+            // USAMOS LA FUNCIÓN AUXILIAR
+            res.json({ habitacion: formatRoom(row) }); 
         } catch (err) {
             res.status(500).json({ error: "Error al buscar habitación." });
         }
     });
 
 
-    // --- RUTAS DE ADMINISTRACIÓN DE HABITACIONES (/rooms/admin) ---
+    // --- RUTAS DE ADMINISTRACIÓN DE HABITACIONES ---
 
-    // POST /rooms/admin - Crear habitación
-    router.post("/admin", verificarToken, soloAdmin, async (req, res) => {
-        const { numero, tipo, precio_noche, descripcion } = req.body;
+    // POST / - Crear habitación
+    router.post("/", verificarToken, soloAdmin, async (req, res) => {
+        const { numero, tipo, precio_noche, descripcion, caracteristicas, imagenes } = req.body;
         if (!numero || !tipo || !precio_noche) return res.status(400).json({ error: "Número, tipo y precio son obligatorios." });
 
         try {
+            // SERIALIZAMOS LOS DATOS ESTRUCTURADOS PARA SQLITE
+            const caracteristicas_json = caracteristicas ? JSON.stringify(caracteristicas) : null;
+            const imagenes_json = imagenes && imagenes.length > 0 ? JSON.stringify(imagenes) : '[]'; // Guardamos array vacío si no hay
+
             const result = await dbRun(
-                "INSERT INTO habitaciones (numero, tipo, precio_noche, descripcion) VALUES (?, ?, ?, ?)",
-                [numero, tipo, precio_noche, descripcion]
+                // AÑADIMOS LOS NUEVOS CAMPOS A LA INSERCIÓN
+                "INSERT INTO habitaciones (numero, tipo, precio_noche, descripcion, caracteristicas_json, imagenes_json) VALUES (?, ?, ?, ?, ?, ?)",
+                [numero, tipo, precio_noche, descripcion, caracteristicas_json, imagenes_json]
             );
             res.status(201).json({ mensaje: "Habitación creada.", id: result.lastID });
         } catch (error) {
@@ -60,31 +92,37 @@ module.exports = ({ dbGet, dbRun, dbAll, verificarToken, soloAdmin }) => {
         }
     });
 
-    // GET /rooms/admin - Obtener todas las habitaciones (Admin, sin filtro)
-    router.get("/admin", verificarToken, soloAdmin, async (req, res) => {
-        try {
-            const rows = await dbAll("SELECT * FROM habitaciones", []);
-            res.json({
-                habitaciones: rows.map(r => ({ ...r, disponible: r.disponible === 1 }))
-            });
-        } catch (err) {
-            res.status(500).json({ error: "Error al obtener habitaciones." });
-        }
+    // GET / - Obtener todas las habitaciones (sin filtro) - REUTILIZA EL CÓDIGO DEL GET PÚBLICO
+    router.get("/", verificarToken, soloAdmin, async (req, res) => {
+        // Redirigimos al GET público sin filtro para evitar duplicación de código
+        return router.get("/", async (req, res) => {
+            try {
+                const rows = await dbAll("SELECT * FROM habitaciones", []);
+                res.json({
+                    habitaciones: rows.map(formatRoom) 
+                });
+            } catch (err) {
+                res.status(500).json({ error: "Error al obtener habitaciones." });
+            }
+        })(req, res);
     });
 
-    // PUT /rooms/admin/:id - Editar habitación
-    router.put("/admin/:id", verificarToken, soloAdmin, async (req, res) => {
+    // PUT /:id - Editar habitación
+    router.put("/:id", verificarToken, soloAdmin, async (req, res) => {
         const { id } = req.params;
-        const { numero, tipo, precio_noche, descripcion, disponible } = req.body;
+        const { numero, tipo, precio_noche, descripcion, disponible, caracteristicas, imagenes } = req.body;
         
         if (!numero || !tipo || !precio_noche || disponible === undefined) {
             return res.status(400).json({ error: "Número, tipo, precio y estado de disponibilidad son obligatorios." });
         }
 
         try {
+            const caracteristicas_json = caracteristicas ? JSON.stringify(caracteristicas) : null;
+            const imagenes_json = imagenes && imagenes.length > 0 ? JSON.stringify(imagenes) : '[]';
+
             const result = await dbRun(
-                "UPDATE habitaciones SET numero = ?, tipo = ?, precio_noche = ?, descripcion = ?, disponible = ? WHERE id = ?",
-                [numero, tipo, precio_noche, descripcion, disponible ? 1 : 0, id]
+                "UPDATE habitaciones SET numero = ?, tipo = ?, precio_noche = ?, descripcion = ?, disponible = ?, caracteristicas_json = ?, imagenes_json = ? WHERE id = ?",
+                [numero, tipo, precio_noche, descripcion, disponible ? 1 : 0, caracteristicas_json, imagenes_json, id]
             );
 
             if (result.changes === 0) return res.status(404).json({ error: "Habitación no encontrada o sin cambios realizados." });
@@ -96,8 +134,8 @@ module.exports = ({ dbGet, dbRun, dbAll, verificarToken, soloAdmin }) => {
         }
     });
 
-    // DELETE /rooms/admin/:id - Eliminar habitación
-    router.delete("/admin/:id", verificarToken, soloAdmin, async (req, res) => {
+    // DELETE /:id - Eliminar habitación
+    router.delete("/:id", verificarToken, soloAdmin, async (req, res) => {
         const { id } = req.params;
         try {
             const result = await dbRun("DELETE FROM habitaciones WHERE id = ?", [id]);

@@ -74,7 +74,7 @@ module.exports = ({ dbGet, dbRun, dbAll, verificarToken, soloAdmin }) => {
     });
 
     // GET /reservations/admin/user/:userId - Buscar por ID de Usuario
-    router.get("/admin/user/:userId", verificarToken, soloAdmin, async (req, res) => {
+    router.get("/admin/:userId", verificarToken, soloAdmin, async (req, res) => {
         const { userId } = req.params;
         try {
             const sql = `
@@ -96,7 +96,7 @@ module.exports = ({ dbGet, dbRun, dbAll, verificarToken, soloAdmin }) => {
     });
 
     // GET /reservations/admin/room/:roomId - Buscar por ID de Habitación
-    router.get("/admin/room/:roomId", verificarToken, soloAdmin, async (req, res) => {
+    router.get("/admin/:roomId", verificarToken, soloAdmin, async (req, res) => {
         const { roomId } = req.params;
         try {
             const sql = `

@@ -69,10 +69,10 @@ module.exports = ({ dbGet, dbRun, dbAll, verificarToken, soloAdmin, SECRET_KEY, 
         res.json({ mensaje: "Sesión cerrada con éxito." });
     });
 
-    // --- RUTAS DE ADMINISTRACIÓN DE USUARIOS (/admin/users) ---
+    // --- RUTAS DE ADMINISTRACIÓN DE USUARIOS ---
 
-    // GET /admin/users - Obtener todos los usuarios
-    router.get("/admin/users", verificarToken, soloAdmin, async (req, res) => {
+    // GET / - Obtener todos los usuarios
+    router.get("/", verificarToken, soloAdmin, async (req, res) => {
         try {
             const sql = "SELECT id, email, telefono, nombre, rol FROM usuarios";
             const rows = await dbAll(sql, []);
@@ -82,8 +82,8 @@ module.exports = ({ dbGet, dbRun, dbAll, verificarToken, soloAdmin, SECRET_KEY, 
         }
     });
 
-    // GET /admin/users/:id - Obtener usuario por ID
-    router.get("/admin/users/:id", verificarToken, soloAdmin, async (req, res) => {
+    // GET /:id - Obtener usuario por ID
+    router.get("/:id", verificarToken, soloAdmin, async (req, res) => {
         const { id } = req.params;
         try {
             const sql = "SELECT id, email, telefono, nombre, rol FROM usuarios WHERE id = ?";
@@ -95,8 +95,8 @@ module.exports = ({ dbGet, dbRun, dbAll, verificarToken, soloAdmin, SECRET_KEY, 
         }
     });
 
-    // PUT /admin/users/:id - Editar usuario
-    router.put("/admin/users/:id", verificarToken, soloAdmin, async (req, res) => {
+    // PUT /:id - Editar usuario
+    router.put("/:id", verificarToken, soloAdmin, async (req, res) => {
         const { id } = req.params;
         const { email, telefono, nombre, rol, contraseña } = req.body;
 
@@ -128,8 +128,8 @@ module.exports = ({ dbGet, dbRun, dbAll, verificarToken, soloAdmin, SECRET_KEY, 
         }
     });
 
-    // DELETE /admin/users/:id - Eliminar usuario
-    router.delete("/admin/users/:id", verificarToken, soloAdmin, async (req, res) => {
+    // DELETE /:id - Eliminar usuario
+    router.delete("/:id", verificarToken, soloAdmin, async (req, res) => {
         const { id } = req.params;
         try {
             if (req.user.id == id) {
@@ -146,6 +146,31 @@ module.exports = ({ dbGet, dbRun, dbAll, verificarToken, soloAdmin, SECRET_KEY, 
             }
             console.error("Error al eliminar usuario:", err);
             res.status(500).json({ error: "Error al eliminar el usuario." });
+        }
+    });
+
+    // GET /status - Verificar estado de sesión y obtener datos del token
+    router.get("/status", verificarToken, async (req, res) => {
+        try {
+            // El token ya fue verificado por 'verificarToken'.
+            // req.user contiene { id, email, nombre, rol } del payload del token.
+            
+            // Opcional: Para obtener todos los datos (incluyendo teléfono) desde la DB
+            const sql = "SELECT id, email, telefono, nombre, rol FROM usuarios WHERE id = ?";
+            const user = await dbGet(sql, [req.user.id]);
+
+            if (!user) {
+                return res.status(404).json({ error: "Usuario asociado al token no encontrado." });
+            }
+            
+            res.json({ 
+                mensaje: "Sesión activa", 
+                usuario: user 
+            });
+
+        } catch (error) {
+            console.error("Error al verificar estado:", error);
+            res.status(500).json({ error: "Error interno al verificar la sesión." });
         }
     });
     

@@ -34,7 +34,9 @@ dbHotel.serialize(() => {
         numero TEXT UNIQUE NOT NULL,
         tipo TEXT NOT NULL,
         precio_noche REAL NOT NULL,
-        descripcion TEXT,
+        caracteristicas_json TEXT,
+        imagenes_json TEXT,
+        descripcion TEXT, 
         disponible INTEGER DEFAULT 1
     )`);
     dbHotel.run(`CREATE TABLE IF NOT EXISTS reservas (
