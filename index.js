@@ -1,57 +1,24 @@
-// index.js
 const express = require("express");
 const jwt = require("jsonwebtoken");
 const cookieParser = require("cookie-parser");
-const sqlite3 = require("sqlite3").verbose();
 const cors = require("cors");
-const bcrypt = require('bcrypt');
+const bcrypt = require('bcrypt'); // Necesario solo para inicializar o pasar a rutas
 
+// 1. Importaciones del Setup
+const { dbGet, dbRun, dbAll, initializeDatabase, SALT_ROUNDS } = require('./db');
 const userRoutes = require('./routes/users');
 const roomRoutes = require('./routes/rooms');
 const reservationRoutes = require('./routes/reservations');
+const authMiddleware = require('./middleware/auth'); // ⬅️ Nuevo: Mover Middlewares
 
 const app = express();
 const PORT = 3000;
-const SECRET_KEY = "hotelTrivago";
-const SALT_ROUNDS = 10; 
+const SECRET_KEY = "hotelTrivago"; // Mantener variables de entorno aquí o en .env
 
-const dbHotel = new sqlite3.Database('./hotel.db', (err) => {
-    if (err) console.error("Error BD hotel:", err.message);
-    else console.log("Conectado a hotel.db");
-});
+// 2. Inicializar la base de datos
+initializeDatabase();
 
-dbHotel.serialize(() => {
-    dbHotel.run(`CREATE TABLE IF NOT EXISTS usuarios (
-        id INTEGER PRIMARY KEY,
-        email TEXT UNIQUE NOT NULL,
-        telefono TEXT NOT NULL,
-        nombre TEXT NOT NULL,
-        contraseña TEXT NOT NULL,
-        rol TEXT DEFAULT 'cliente'
-    )`);
-    dbHotel.run(`CREATE TABLE IF NOT EXISTS habitaciones (
-        id INTEGER PRIMARY KEY,
-        numero TEXT UNIQUE NOT NULL,
-        tipo TEXT NOT NULL,
-        precio_noche REAL NOT NULL,
-        caracteristicas_json TEXT,
-        imagenes_json TEXT,
-        descripcion TEXT, 
-        disponible INTEGER DEFAULT 1
-    )`);
-    dbHotel.run(`CREATE TABLE IF NOT EXISTS reservas (
-        id INTEGER PRIMARY KEY,
-        habitacionId INTEGER NOT NULL,
-        usuarioId INTEGER NOT NULL,
-        fecha_inicio TEXT NOT NULL,
-        fecha_fin TEXT NOT NULL,
-        estado TEXT DEFAULT 'pendiente',
-        precio_total REAL NOT NULL,
-        FOREIGN KEY(habitacionId) REFERENCES habitaciones(id) ON DELETE RESTRICT,
-        FOREIGN KEY(usuarioId) REFERENCES usuarios(id) ON DELETE RESTRICT
-    )`);
-});
-
+// 3. Middlewares Globales
 app.use(cors({
     origin: ["http://localhost:3000", "http://localhost:3001"],
     credentials: true
@@ -59,52 +26,21 @@ app.use(cors({
 app.use(express.json());
 app.use(cookieParser());
 
-const dbGet = (sql, params) => new Promise((resolve, reject) => {
-    dbHotel.get(sql, params, (err, row) => {
-        if (err) return reject(err);
-        resolve(row);
-    });
-});
-const dbAll = (sql, params) => new Promise((resolve, reject) => {
-    dbHotel.all(sql, params, (err, rows) => {
-        if (err) return reject(err);
-        resolve(rows);
-    });
-});
-const dbRun = (sql, params) => new Promise((resolve, reject) => {
-    dbHotel.run(sql, params, function(err) {
-        if (err) return reject(err);
-        resolve(this);
-    });
-});
+// 4. Mover y Aplicar Middlewares de Autenticación/Autorización
+// Usa la función que requiere la llave secreta para crear los middlewares
+const { verificarToken, soloAdmin } = authMiddleware(SECRET_KEY, jwt);
 
-const verificarToken = (req, res, next) => {
-    const token = req.cookies.token || req.headers['authorization']?.split(' ')[1];
-    if (!token) return res.status(401).json({ error: "Acceso denegado. Token requerido." });
-
-    jwt.verify(token, SECRET_KEY, (err, decoded) => {
-        if (err) return res.status(403).json({ error: "Token inválido o expirado." });
-        req.user = decoded;
-        next();
-    });
-};
-
-const soloAdmin = (req, res, next) => {
-    if (req.user && req.user.rol === 'admin') {
-        next();
-    } else {
-        res.status(403).json({ error: "Acceso denegado. Solo para administradores." });
-    }
-};
-
+// 5. Conectar Rutas (Pasa solo lo que necesitan)
 app.use('/users', userRoutes({ dbGet, dbRun, dbAll, verificarToken, soloAdmin, SECRET_KEY, bcrypt, SALT_ROUNDS }));
 app.use('/rooms', roomRoutes({ dbGet, dbRun, dbAll, verificarToken, soloAdmin }));
 app.use('/reservations', reservationRoutes({ dbGet, dbRun, dbAll, verificarToken, soloAdmin }));
 
+// 6. Ruta Raíz
 app.get("/", (req, res) => {
     res.send("¡Bienvenido al Backend del Hotel! 🏨 Servidor corriendo.");
 });
 
+// 7. Arrancar Servidor
 app.listen(PORT, () => {
     console.log(`Servidor de Hotel corriendo en http://localhost:${PORT}`);
 });

@@ -1,9 +1,9 @@
 // routes/users.js
 const express = require('express');
 
-// Exportamos una función para recibir las dependencias (DB, Middlewares, etc.)
 module.exports = ({ dbGet, dbRun, dbAll, verificarToken, soloAdmin, SECRET_KEY, bcrypt, SALT_ROUNDS }) => {
     const router = express.Router();
+    const jwt = require('jsonwebtoken'); // Se añade aquí para limpieza
 
     // --- RUTAS PÚBLICAS DE AUTENTICACIÓN ---
 
@@ -46,7 +46,7 @@ module.exports = ({ dbGet, dbRun, dbAll, verificarToken, soloAdmin, SECRET_KEY, 
 
             delete user.contraseña; 
             const payload = { id: user.id, email: user.email, nombre: user.nombre, rol: user.rol };
-            const token = require('jsonwebtoken').sign(payload, SECRET_KEY, { expiresIn: "8h" });
+            const token = jwt.sign(payload, SECRET_KEY, { expiresIn: "8h" }); // Usando la variable jwt
 
             res.cookie("token", token, { 
                 httpOnly: true, 
@@ -67,6 +67,91 @@ module.exports = ({ dbGet, dbRun, dbAll, verificarToken, soloAdmin, SECRET_KEY, 
     router.post("/logout", (req, res) => {
         res.clearCookie("token");
         res.json({ mensaje: "Sesión cerrada con éxito." });
+    });
+    
+    // --- RUTAS DE PERFIL DE USUARIO (CLIENTE/ADMIN) ---
+
+    // GET /me - Obtener mis propios datos de perfil (usando el token) ⬅️ NUEVO
+    router.get("/me", verificarToken, async (req, res) => {
+        try {
+            // Se usa req.user.id del token verificado
+            const sql = "SELECT id, email, telefono, nombre, rol FROM usuarios WHERE id = ?";
+            const user = await dbGet(sql, [req.user.id]);
+
+            if (!user) {
+                return res.status(404).json({ error: "Usuario asociado al token no encontrado." });
+            }
+            
+            res.json({ usuario: user });
+
+        } catch (error) {
+            console.error("Error al obtener perfil:", error);
+            res.status(500).json({ error: "Error interno al obtener los datos de perfil." });
+        }
+    });
+
+    // PUT /me - Editar mi propio perfil (excepto rol) ⬅️ NUEVO
+    router.put("/me", verificarToken, async (req, res) => {
+        const usuarioId = req.user.id;
+        const { email, telefono, nombre, contraseña } = req.body;
+        
+        try {
+            let sql = "UPDATE usuarios SET";
+            const params = [];
+            const updates = [];
+
+            if (email) { updates.push("email = ?"); params.push(email); }
+            if (telefono) { updates.push("telefono = ?"); params.push(telefono); }
+            if (nombre) { updates.push("nombre = ?"); params.push(nombre); }
+            
+            if (contraseña) {
+                const hashedPassword = await bcrypt.hash(contraseña, SALT_ROUNDS);
+                updates.push("contraseña = ?");
+                params.push(hashedPassword);
+            }
+
+            if (updates.length === 0) {
+                 return res.status(400).json({ error: "No se proporcionaron datos válidos para actualizar." });
+            }
+
+            sql += " " + updates.join(", ");
+            sql += " WHERE id = ?";
+            params.push(usuarioId); // CRÍTICO: Asegura que solo se actualice el usuario del token.
+
+            const result = await dbRun(sql, params);
+
+            if (result.changes === 0) return res.status(404).json({ error: "Usuario no encontrado o sin cambios realizados." });
+            res.json({ mensaje: "Perfil actualizado con éxito." });
+
+        } catch (err) {
+             // Este error captura conflictos de email
+            if (err.code === 'SQLITE_CONSTRAINT') {
+                return res.status(409).json({ error: "El email proporcionado ya está en uso." });
+            }
+            console.error("Error al actualizar perfil:", err);
+            res.status(500).json({ error: "Error al actualizar el perfil." });
+        }
+    });
+    
+    // GET /status - Verificar estado de sesión y obtener datos del token (Se mantiene, aunque /me es mejor)
+    router.get("/status", verificarToken, async (req, res) => {
+        try {
+            const sql = "SELECT id, email, telefono, nombre, rol FROM usuarios WHERE id = ?";
+            const user = await dbGet(sql, [req.user.id]);
+
+            if (!user) {
+                return res.status(404).json({ error: "Usuario asociado al token no encontrado." });
+            }
+            
+            res.json({ 
+                mensaje: "Sesión activa", 
+                usuario: user 
+            });
+
+        } catch (error) {
+            console.error("Error al verificar estado:", error);
+            res.status(500).json({ error: "Error interno al verificar la sesión." });
+        }
     });
 
     // --- RUTAS DE ADMINISTRACIÓN DE USUARIOS ---
@@ -95,7 +180,7 @@ module.exports = ({ dbGet, dbRun, dbAll, verificarToken, soloAdmin, SECRET_KEY, 
         }
     });
 
-    // PUT /:id - Editar usuario
+    // PUT /:id - Editar usuario (Admin)
     router.put("/:id", verificarToken, soloAdmin, async (req, res) => {
         const { id } = req.params;
         const { email, telefono, nombre, rol, contraseña } = req.body;
@@ -132,6 +217,7 @@ module.exports = ({ dbGet, dbRun, dbAll, verificarToken, soloAdmin, SECRET_KEY, 
     router.delete("/:id", verificarToken, soloAdmin, async (req, res) => {
         const { id } = req.params;
         try {
+            // Previene que el administrador elimine su propia cuenta
             if (req.user.id == id) {
                 return res.status(403).json({ error: "No puedes eliminar tu propia cuenta de administrador." });
             }
@@ -141,6 +227,7 @@ module.exports = ({ dbGet, dbRun, dbAll, verificarToken, soloAdmin, SECRET_KEY, 
             res.json({ mensaje: `Usuario con ID ${id} eliminado.` });
 
         } catch (err) {
+             // Maneja si el usuario tiene reservas
             if (err.code === 'SQLITE_CONSTRAINT_FOREIGNKEY') {
                 return res.status(409).json({ error: "No se puede eliminar el usuario porque tiene reservas asociadas." });
             }
@@ -149,30 +236,5 @@ module.exports = ({ dbGet, dbRun, dbAll, verificarToken, soloAdmin, SECRET_KEY, 
         }
     });
 
-    // GET /status - Verificar estado de sesión y obtener datos del token
-    router.get("/status", verificarToken, async (req, res) => {
-        try {
-            // El token ya fue verificado por 'verificarToken'.
-            // req.user contiene { id, email, nombre, rol } del payload del token.
-            
-            // Opcional: Para obtener todos los datos (incluyendo teléfono) desde la DB
-            const sql = "SELECT id, email, telefono, nombre, rol FROM usuarios WHERE id = ?";
-            const user = await dbGet(sql, [req.user.id]);
-
-            if (!user) {
-                return res.status(404).json({ error: "Usuario asociado al token no encontrado." });
-            }
-            
-            res.json({ 
-                mensaje: "Sesión activa", 
-                usuario: user 
-            });
-
-        } catch (error) {
-            console.error("Error al verificar estado:", error);
-            res.status(500).json({ error: "Error interno al verificar la sesión." });
-        }
-    });
-    
     return router;
 };
