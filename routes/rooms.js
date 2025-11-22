@@ -29,22 +29,44 @@ module.exports = ({ dbGet, dbRun, dbAll, verificarToken, soloAdmin }) => {
         };
     };
 
-    // --- RUTAS PÚBLICAS DE HABITACIONES ---
+    // routes/rooms.js
 
-    // GET / - Obtener todas las habitaciones (con filtro)
+    // --- RUTAS PÚBLICAS DE HABITACIONES (ÚNICO GET /) ---
+
+    // GET / - Obtener todas las habitaciones (POR DEFECTO: disponibles)
     router.get("/", async (req, res) => {
-        const { disponible } = req.query;
+        // Si no se especifica 'disponible', asumimos 'true' (solo mostrar disponibles al público)
+        const { disponible = 'true' } = req.query; 
+
         let sql = "SELECT * FROM habitaciones";
         const params = [];
 
-        if (disponible !== undefined) {
-            sql += " WHERE disponible = ?";
-            params.push(disponible === 'true' || disponible === '1' ? 1 : 0);
+        // Lógica para filtrar por disponible=true o disponible=false
+        if (disponible === 'true' || disponible === '1') {
+            sql += " WHERE disponible = 1";
+        } else if (disponible === 'false' || disponible === '0') {
+            // Opcional: El público podría querer ver las no disponibles si existe ese caso
+            sql += " WHERE disponible = 0";
         }
-
+        // Si el cliente no pasa el parámetro 'disponible', por defecto solo ve las que tienen 'disponible = 1'
+        
+        // NOTA: Si necesitas que el admin vea TODAS las habitaciones sin pasar filtro, 
+        // debes usar un endpoint diferente, como /rooms/all, protegido por soloAdmin.
+        
         try {
             const rows = await dbAll(sql, params);
-            // USAMOS LA FUNCIÓN AUXILIAR
+            res.json({
+                habitaciones: rows.map(formatRoom) 
+            });
+        } catch (err) {
+            res.status(500).json({ error: "Error al obtener habitaciones." });
+        }
+    });
+
+    // GET /admin/all - Obtener TODAS las habitaciones sin filtro (Solo Admin)
+    router.get("/admin/all", verificarToken, soloAdmin, async (req, res) => {
+        try {
+            const rows = await dbAll("SELECT * FROM habitaciones", []);
             res.json({
                 habitaciones: rows.map(formatRoom) 
             });
@@ -90,21 +112,6 @@ module.exports = ({ dbGet, dbRun, dbAll, verificarToken, soloAdmin }) => {
             console.error("Error al crear habitación:", error);
             res.status(500).json({ error: "Error al crear la habitación. El número podría estar duplicado." });
         }
-    });
-
-    // GET / - Obtener todas las habitaciones (sin filtro) - REUTILIZA EL CÓDIGO DEL GET PÚBLICO
-    router.get("/", verificarToken, soloAdmin, async (req, res) => {
-        // Redirigimos al GET público sin filtro para evitar duplicación de código
-        return router.get("/", async (req, res) => {
-            try {
-                const rows = await dbAll("SELECT * FROM habitaciones", []);
-                res.json({
-                    habitaciones: rows.map(formatRoom) 
-                });
-            } catch (err) {
-                res.status(500).json({ error: "Error al obtener habitaciones." });
-            }
-        })(req, res);
     });
 
     // PUT /:id - Editar habitación
