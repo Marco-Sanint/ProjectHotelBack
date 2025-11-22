@@ -20,7 +20,6 @@ module.exports = (SECRET_KEY, jwt) => {
     };
 
     const soloPersonal = (req, res, next) => {
-        // Permite acceso a administradores O recepcionistas
         if (req.user && (req.user.rol === 'admin' || req.user.rol === 'recepcionista')) {
             next();
         } else {

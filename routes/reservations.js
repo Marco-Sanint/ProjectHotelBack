@@ -4,8 +4,6 @@ const express = require('express');
 module.exports = ({ dbGet, dbRun, dbAll, verificarToken, soloPersonal, soloAdmin }) => {
     const router = express.Router();
 
-    // --- RUTAS DE RESERVAS (CLIENTE) (/reservations) ---
-
     // POST /reservations
     router.post("/", verificarToken, async (req, res) => {
         const { habitacionId, fecha_inicio, fecha_fin } = req.body;
@@ -14,11 +12,11 @@ module.exports = ({ dbGet, dbRun, dbAll, verificarToken, soloPersonal, soloAdmin
         if (!habitacionId || !fecha_inicio || !fecha_fin) return res.status(400).json({ error: "Campos de reserva requeridos." });
 
         try {
-            // --- 1. Verificación de la Habitación (EXISTE y está disponible genéricamente) ---
+            // Verificación disponibilidad y existencia habitación
             const roomInfo = await dbGet("SELECT * FROM habitaciones WHERE id = ?", [habitacionId]);
             if (!roomInfo || roomInfo.disponible === 0) return res.status(404).json({ error: "Habitación no disponible (generalmente)." });
 
-            // --- 2. Validación de Fechas ---
+            // Validación de Fechas
             const inicio = new Date(fecha_inicio);
             const fin = new Date(fecha_fin);
             const diffTime = Math.abs(fin - inicio);
@@ -27,7 +25,7 @@ module.exports = ({ dbGet, dbRun, dbAll, verificarToken, soloPersonal, soloAdmin
 
             const precio_total = roomInfo.precio_noche * diffDays;
 
-            // --- 3. ⚠️ Verificación de Conflictos de Fechas (Lo Esencial) ---
+            // Verificación conflictos de fechas
             const conflictSql = `
                 SELECT id FROM reservas 
                 WHERE habitacionId = ? 
@@ -40,14 +38,13 @@ module.exports = ({ dbGet, dbRun, dbAll, verificarToken, soloPersonal, soloAdmin
             const conflictingReservation = await dbGet(conflictSql, conflictParams);
 
             if (conflictingReservation) {
-                // ¡Conflicto encontrado! La habitación ya está reservada para esa fecha.
                 return res.status(409).json({ 
                     error: "Conflicto de reserva. La habitación ya está ocupada en ese rango de fechas.", 
                     conflictingId: conflictingReservation.id
                 });
             }
             
-            // --- 4. Inserción de la Reserva (Si pasa todas las verificaciones) ---
+            // Inserción de la Reserva
             const reservationResult = await dbRun(
                 `INSERT INTO reservas (habitacionId, usuarioId, fecha_inicio, fecha_fin, precio_total, estado) VALUES (?, ?, ?, ?, ?, 'confirmada')`,
                 [habitacionId, usuarioId, fecha_inicio, fecha_fin, precio_total]
@@ -72,10 +69,8 @@ module.exports = ({ dbGet, dbRun, dbAll, verificarToken, soloPersonal, soloAdmin
         }
     });
 
-
-    // GET /reservations/admin - Ver todas las reservas (CON FILTROS OPCIONALES)
+    // GET /reservations/admin - Ver todas las reservas
     router.get("/", verificarToken, soloPersonal, async (req, res) => {
-        // ⬅️ EXPLICITO: Leer los filtros de búsqueda de la URL
         const { userId, roomId } = req.query; 
 
         let sql = `
@@ -91,7 +86,6 @@ module.exports = ({ dbGet, dbRun, dbAll, verificarToken, soloPersonal, soloAdmin
         let params = [];
         let whereClause = [];
 
-        // ⬅️ EXPLICITO: Construir la cláusula WHERE condicionalmente
         if (userId) {
             whereClause.push("r.usuarioId = ?");
             params.push(userId);
@@ -108,7 +102,7 @@ module.exports = ({ dbGet, dbRun, dbAll, verificarToken, soloPersonal, soloAdmin
         sql += " ORDER BY r.fecha_inicio DESC";
 
         try {
-            const rows = await dbAll(sql, params); // Pasar 'params' al final
+            const rows = await dbAll(sql, params);
             res.json({ reservas: rows });
         } catch (err) {
             res.status(500).json({ error: "Error al obtener reservas filtradas." });
@@ -125,8 +119,8 @@ module.exports = ({ dbGet, dbRun, dbAll, verificarToken, soloPersonal, soloAdmin
         }
 
         try {
-            // --- 1. Verificación de Conflicto (Integridad de Datos) ---
-            // Buscamos conflictos con OTRAS reservas (id != ?)
+            // Verificación de Conflictos
+            // Búsqueda de conflictos con otras reservas
             const conflictSql = `
                 SELECT id FROM reservas 
                 WHERE habitacionId = ? 
@@ -144,7 +138,7 @@ module.exports = ({ dbGet, dbRun, dbAll, verificarToken, soloPersonal, soloAdmin
                 });
             }
             
-            // --- 2. Ejecución de la Actualización ---
+            // Ejecución de la Actualización
             const result = await dbRun(
                 "UPDATE reservas SET habitacionId = ?, fecha_inicio = ?, fecha_fin = ?, estado = ? WHERE id = ?",
                 [habitacionId, fecha_inicio, fecha_fin, estado, id]
@@ -159,36 +153,60 @@ module.exports = ({ dbGet, dbRun, dbAll, verificarToken, soloPersonal, soloAdmin
         }
     });
 
-    // DELETE /reservations/:id - Cancelar o Eliminar mi reserva
-    router.delete("/:id", verificarToken, soloPersonal, async (req, res) => {
+    // DELETE /reservations/:id - Cancelar o eliminar reserva
+    router.delete("/:id", verificarToken, async (req, res) => {
         const { id } = req.params;
         const usuarioId = req.user.id;
         const userRole = req.user.rol;
+        
+        // Rango de cancelación permitido para el cliente
+        const limiteCancelacion = 7; 
 
         try {
-            // 1. Verificar si la reserva existe y obtener el dueño
-            const reserva = await dbGet("SELECT usuarioId FROM reservas WHERE id = ?", [id]);
+            // Verificar si la reserva existe y obtener datos clave
+            const reserva = await dbGet("SELECT usuarioId, fecha_inicio FROM reservas WHERE id = ?", [id]);
             if (!reserva) return res.status(404).json({ error: "Reserva no encontrada." });
 
-            // 2. Lógica de Autorización: Solo el dueño O el administrador pueden eliminar
+            // Definir que rol quiere hacer la acción
             const esDueno = reserva.usuarioId === usuarioId;
             const esPersonal = userRole === 'admin' || userRole === 'recepcionista';
 
-            if (!esDueno && !esPersonal) {
-                return res.status(403).json({ error: "Acceso denegado. Solo puedes eliminar tus propias reservas." });
+            // Autorización
+            if (esPersonal) {
+                // El personal (admin/recepcionista) puede eliminar en cualquier momento.
+            } else if (esDueno) {
+                // El dueño solo puede cancelar dentro del límite de días.
+                const fechaInicio = new Date(reserva.fecha_inicio);
+                const hoy = new Date();
+                
+                // Calcula la diferencia en milisegundos y la convierte a días
+                const diffTime = fechaInicio.getTime() - hoy.getTime();
+                const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+                
+                if (diffDays <= limiteCancelacion) {
+                    // Si la diferencia es menor o igual al límite (ej: 7 días o menos), ¡Acceso denegado!
+                    return res.status(403).json({ 
+                        error: `Acceso denegado. Las reservas solo pueden cancelarse con más de ${limiteCancelacion} días de anticipación. Faltan ${diffDays} días para el inicio.` 
+                    });
+                }
+            } else {
+                // El usuario no es ni el dueño ni el personal.
+                return res.status(403).json({ error: "Acceso denegado. Solo puedes eliminar tus propias reservas o necesitas rol de personal." });
             }
             
-            // 3. Ejecutar la eliminación
+            // Ejecutar la eliminación
             const result = await dbRun("DELETE FROM reservas WHERE id = ?", [id]);
             
-            // La ruta de administrador puede seguir en /admin/:id si quieres mantenerla como super-override.
-            // Pero esta ruta es la que el cliente debería usar.
-
             if (result.changes === 0) return res.status(404).json({ error: "Reserva no encontrada después de la verificación." });
-            res.json({ mensaje: `Reserva con ID ${id} eliminada.` });
+            
+            const mensaje = esPersonal ? 
+                `Reserva con ID ${id} eliminada por el personal.` : 
+                `Reserva con ID ${id} cancelada con éxito.`;
+
+            res.json({ mensaje });
 
         } catch (err) {
-            console.error("Error al eliminar reserva (Cliente/Admin):", err);
+            console.error("Error al eliminar reserva (Límite de Días):", err);
             res.status(500).json({ error: "Error al eliminar la reserva." });
         }
     });

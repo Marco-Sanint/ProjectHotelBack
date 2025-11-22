@@ -3,9 +3,7 @@ const express = require('express');
 
 module.exports = ({ dbGet, dbRun, dbAll, verificarToken, soloAdmin, SECRET_KEY, bcrypt, SALT_ROUNDS }) => {
     const router = express.Router();
-    const jwt = require('jsonwebtoken'); // Se añade aquí para limpieza
-
-    // --- RUTAS PÚBLICAS DE AUTENTICACIÓN ---
+    const jwt = require('jsonwebtoken');
 
     // POST /register
     router.post("/register", async (req, res) => {
@@ -46,7 +44,7 @@ module.exports = ({ dbGet, dbRun, dbAll, verificarToken, soloAdmin, SECRET_KEY, 
 
             delete user.contraseña; 
             const payload = { id: user.id, email: user.email, nombre: user.nombre, rol: user.rol };
-            const token = jwt.sign(payload, SECRET_KEY, { expiresIn: "8h" }); // Usando la variable jwt
+            const token = jwt.sign(payload, SECRET_KEY, { expiresIn: "8h" });
 
             res.cookie("token", token, { 
                 httpOnly: true, 
@@ -68,10 +66,8 @@ module.exports = ({ dbGet, dbRun, dbAll, verificarToken, soloAdmin, SECRET_KEY, 
         res.clearCookie("token");
         res.json({ mensaje: "Sesión cerrada con éxito." });
     });
-    
-    // --- RUTAS DE PERFIL DE USUARIO (CLIENTE/ADMIN) ---
 
-    // GET /me - Obtener mis propios datos de perfil (usando el token) ⬅️ NUEVO
+    // GET /me - Obtener mis propios datos de perfil usando el token
     router.get("/me", verificarToken, async (req, res) => {
         try {
             // Se usa req.user.id del token verificado
@@ -90,7 +86,7 @@ module.exports = ({ dbGet, dbRun, dbAll, verificarToken, soloAdmin, SECRET_KEY, 
         }
     });
 
-    // PUT /me - Editar mi propio perfil (excepto rol) ⬅️ NUEVO
+    // PUT /me - Editar mi propio perfil
     router.put("/me", verificarToken, async (req, res) => {
         const usuarioId = req.user.id;
         const { email, telefono, nombre, contraseña } = req.body;
@@ -116,7 +112,7 @@ module.exports = ({ dbGet, dbRun, dbAll, verificarToken, soloAdmin, SECRET_KEY, 
 
             sql += " " + updates.join(", ");
             sql += " WHERE id = ?";
-            params.push(usuarioId); // CRÍTICO: Asegura que solo se actualice el usuario del token.
+            params.push(usuarioId);
 
             const result = await dbRun(sql, params);
 
@@ -124,7 +120,6 @@ module.exports = ({ dbGet, dbRun, dbAll, verificarToken, soloAdmin, SECRET_KEY, 
             res.json({ mensaje: "Perfil actualizado con éxito." });
 
         } catch (err) {
-             // Este error captura conflictos de email
             if (err.code === 'SQLITE_CONSTRAINT') {
                 return res.status(409).json({ error: "El email proporcionado ya está en uso." });
             }
@@ -133,7 +128,7 @@ module.exports = ({ dbGet, dbRun, dbAll, verificarToken, soloAdmin, SECRET_KEY, 
         }
     });
     
-    // GET /status - Verificar estado de sesión y obtener datos del token (Se mantiene, aunque /me es mejor)
+    // GET /status - Verificar estado de sesión y obtener datos del token
     router.get("/status", verificarToken, async (req, res) => {
         try {
             const sql = "SELECT id, email, telefono, nombre, rol FROM usuarios WHERE id = ?";
@@ -153,8 +148,6 @@ module.exports = ({ dbGet, dbRun, dbAll, verificarToken, soloAdmin, SECRET_KEY, 
             res.status(500).json({ error: "Error interno al verificar la sesión." });
         }
     });
-
-    // --- RUTAS DE ADMINISTRACIÓN DE USUARIOS ---
 
     router.post("/admin/register", verificarToken, soloAdmin, async (req, res) => {
         const { email, telefono, nombre, contraseña, rol } = req.body;
@@ -251,7 +244,6 @@ module.exports = ({ dbGet, dbRun, dbAll, verificarToken, soloAdmin, SECRET_KEY, 
     router.delete("/:id", verificarToken, soloAdmin, async (req, res) => {
         const { id } = req.params;
         try {
-            // Previene que el administrador elimine su propia cuenta
             if (req.user.id == id) {
                 return res.status(403).json({ error: "No puedes eliminar tu propia cuenta de administrador." });
             }
@@ -261,7 +253,6 @@ module.exports = ({ dbGet, dbRun, dbAll, verificarToken, soloAdmin, SECRET_KEY, 
             res.json({ mensaje: `Usuario con ID ${id} eliminado.` });
 
         } catch (err) {
-             // Maneja si el usuario tiene reservas
             if (err.code === 'SQLITE_CONSTRAINT_FOREIGNKEY') {
                 return res.status(409).json({ error: "No se puede eliminar el usuario porque tiene reservas asociadas." });
             }

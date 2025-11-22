@@ -29,29 +29,18 @@ module.exports = ({ dbGet, dbRun, dbAll, verificarToken, soloAdmin }) => {
         };
     };
 
-    // routes/rooms.js
-
-    // --- RUTAS PÚBLICAS DE HABITACIONES (ÚNICO GET /) ---
-
-    // GET / - Obtener todas las habitaciones (POR DEFECTO: disponibles)
+    // GET / - Obtener todas las habitaciones
     router.get("/", async (req, res) => {
-        // Si no se especifica 'disponible', asumimos 'true' (solo mostrar disponibles al público)
         const { disponible = 'true' } = req.query; 
 
         let sql = "SELECT * FROM habitaciones";
         const params = [];
 
-        // Lógica para filtrar por disponible=true o disponible=false
         if (disponible === 'true' || disponible === '1') {
             sql += " WHERE disponible = 1";
         } else if (disponible === 'false' || disponible === '0') {
-            // Opcional: El público podría querer ver las no disponibles si existe ese caso
             sql += " WHERE disponible = 0";
         }
-        // Si el cliente no pasa el parámetro 'disponible', por defecto solo ve las que tienen 'disponible = 1'
-        
-        // NOTA: Si necesitas que el admin vea TODAS las habitaciones sin pasar filtro, 
-        // debes usar un endpoint diferente, como /rooms/all, protegido por soloAdmin.
         
         try {
             const rows = await dbAll(sql, params);
@@ -63,7 +52,7 @@ module.exports = ({ dbGet, dbRun, dbAll, verificarToken, soloAdmin }) => {
         }
     });
 
-    // GET /admin/all - Obtener TODAS las habitaciones sin filtro (Solo Admin)
+    // GET /admin/all - Admin puede ver todas las habitaciones
     router.get("/admin/all", verificarToken, soloAdmin, async (req, res) => {
         try {
             const rows = await dbAll("SELECT * FROM habitaciones", []);
@@ -100,7 +89,7 @@ module.exports = ({ dbGet, dbRun, dbAll, verificarToken, soloAdmin }) => {
         try {
             // SERIALIZAMOS LOS DATOS ESTRUCTURADOS PARA SQLITE
             const caracteristicas_json = caracteristicas ? JSON.stringify(caracteristicas) : null;
-            const imagenes_json = imagenes && imagenes.length > 0 ? JSON.stringify(imagenes) : '[]'; // Guardamos array vacío si no hay
+            const imagenes_json = imagenes && imagenes.length > 0 ? JSON.stringify(imagenes) : '[]';
 
             const result = await dbRun(
                 // AÑADIMOS LOS NUEVOS CAMPOS A LA INSERCIÓN
