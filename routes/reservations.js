@@ -1,7 +1,7 @@
 // routes/reservations.js
 const express = require('express');
 
-module.exports = ({ dbGet, dbRun, dbAll, verificarToken, soloAdmin }) => {
+module.exports = ({ dbGet, dbRun, dbAll, verificarToken, soloPersonal, soloAdmin }) => {
     const router = express.Router();
 
     // --- RUTAS DE RESERVAS (CLIENTE) (/reservations) ---
@@ -74,7 +74,7 @@ module.exports = ({ dbGet, dbRun, dbAll, verificarToken, soloAdmin }) => {
 
 
     // GET /reservations/admin - Ver todas las reservas (CON FILTROS OPCIONALES)
-    router.get("/admin", verificarToken, soloAdmin, async (req, res) => {
+    router.get("/admin", verificarToken, soloPersonal, async (req, res) => {
         // ⬅️ EXPLICITO: Leer los filtros de búsqueda de la URL
         const { userId, roomId } = req.query; 
 
@@ -115,8 +115,8 @@ module.exports = ({ dbGet, dbRun, dbAll, verificarToken, soloAdmin }) => {
         }
     });
 
-    // PUT /reservations/admin/:id - Editar reserva
-    router.put("/admin/:id", verificarToken, soloAdmin, async (req, res) => {
+    // PUT /reservations/:id - Editar reserva
+    router.put("/:id", verificarToken, soloPersonal, async (req, res) => {
         const { id } = req.params;
         const { fecha_inicio, fecha_fin, estado, habitacionId } = req.body;
 
@@ -159,8 +159,8 @@ module.exports = ({ dbGet, dbRun, dbAll, verificarToken, soloAdmin }) => {
         }
     });
 
-    // DELETE /reservations/:id - Cancelar o Eliminar mi reserva
-    router.delete("/:id", verificarToken, async (req, res) => {
+    // DELETE /reservations/:id - Eliminar reserva
+    router.delete("/:id", verificarToken, soloPersonal, async (req, res) => {
         const { id } = req.params;
         const usuarioId = req.user.id;
         const userRole = req.user.rol;

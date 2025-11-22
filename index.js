@@ -30,10 +30,17 @@ app.use(cookieParser());
 // Usa la función que requiere la llave secreta para crear los middlewares
 const { verificarToken, soloAdmin } = authMiddleware(SECRET_KEY, jwt);
 
-// 5. Conectar Rutas (Pasa solo lo que necesitan)
+const soloPersonal = (req, res, next) => {
+    if (req.user && req.user.rol === 'admin' || req.user && req.user.rol === 'recepcionista') {
+        next();
+    } else {
+        res.status(403).json({ error: "Acceso denegado. Solo para personal." });
+    }
+};
+
 app.use('/users', userRoutes({ dbGet, dbRun, dbAll, verificarToken, soloAdmin, SECRET_KEY, bcrypt, SALT_ROUNDS }));
 app.use('/rooms', roomRoutes({ dbGet, dbRun, dbAll, verificarToken, soloAdmin }));
-app.use('/reservations', reservationRoutes({ dbGet, dbRun, dbAll, verificarToken, soloAdmin }));
+app.use('/reservations', reservationRoutes({ dbGet, dbRun, dbAll, verificarToken, soloPersonal, soloAdmin }));
 
 // 6. Ruta Raíz
 app.get("/", (req, res) => {

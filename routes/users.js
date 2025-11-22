@@ -156,6 +156,42 @@ module.exports = ({ dbGet, dbRun, dbAll, verificarToken, soloAdmin, SECRET_KEY, 
 
     // --- RUTAS DE ADMINISTRACIÓN DE USUARIOS ---
 
+    // POST /admin/register
+    router.post("/admin/register", verificarToken, soloAdmin, async (req, res) => {
+        const { email, telefono, nombre, contraseña, rol } = req.body;
+        
+        if (!email || !telefono || !nombre || !contraseña || !rol) {
+            return res.status(400).json({ error: "Todos los campos (email, teléfono, nombre, contraseña y rol) son obligatorios." });
+        }
+
+        const rolesPermitidos = ['admin', 'recepcionista', 'cliente'];
+        if (!rolesPermitidos.includes(rol)) {
+            return res.status(400).json({ error: "Rol inválido. Roles permitidos: admin, recepcionista, cliente." });
+        }
+
+        try {
+            const existingUser = await dbGet("SELECT * FROM usuarios WHERE email = ?", [email]);
+            if (existingUser) return res.status(409).json({ error: "Correo ya registrado." });
+
+            const hashedPassword = await bcrypt.hash(contraseña, SALT_ROUNDS);
+
+            const result = await dbRun(
+                "INSERT INTO usuarios (email, telefono, nombre, contraseña, rol) VALUES (?, ?, ?, ?, ?)",
+                [email, telefono, nombre, hashedPassword, rol]
+            );
+            
+            res.status(201).json({ 
+                mensaje: `Usuario ${nombre} (${rol}) creado exitosamente.`,
+                id: result.lastID
+            });
+
+        } catch (error) {
+            console.error("Error al crear usuario por admin:", error);
+            res.status(500).json({ error: "Error interno al crear el usuario." });
+        }
+    });
+
+
     // GET / - Obtener todos los usuarios
     router.get("/", verificarToken, soloAdmin, async (req, res) => {
         try {
