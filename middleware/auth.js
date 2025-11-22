@@ -1,4 +1,3 @@
-// Este archivo exporta una función que recibe dependencias como SECRET_KEY y jwt
 module.exports = (SECRET_KEY, jwt) => {
 
     const verificarToken = (req, res, next) => {
@@ -19,6 +18,15 @@ module.exports = (SECRET_KEY, jwt) => {
             res.status(403).json({ error: "Acceso denegado. Solo para administradores." });
         }
     };
+
+    const soloPersonal = (req, res, next) => {
+        // Permite acceso a administradores O recepcionistas
+        if (req.user && (req.user.rol === 'admin' || req.user.rol === 'recepcionista')) {
+            next();
+        } else {
+            res.status(403).json({ error: "Acceso denegado. Solo para personal." });
+        }
+    };
     
-    return { verificarToken, soloAdmin };
+    return { verificarToken, soloAdmin, soloPersonal };
 };

@@ -156,7 +156,6 @@ module.exports = ({ dbGet, dbRun, dbAll, verificarToken, soloAdmin, SECRET_KEY, 
 
     // --- RUTAS DE ADMINISTRACIÓN DE USUARIOS ---
 
-    // POST /admin/register
     router.post("/admin/register", verificarToken, soloAdmin, async (req, res) => {
         const { email, telefono, nombre, contraseña, rol } = req.body;
         
@@ -190,7 +189,6 @@ module.exports = ({ dbGet, dbRun, dbAll, verificarToken, soloAdmin, SECRET_KEY, 
             res.status(500).json({ error: "Error interno al crear el usuario." });
         }
     });
-
 
     // GET / - Obtener todos los usuarios
     router.get("/", verificarToken, soloAdmin, async (req, res) => {

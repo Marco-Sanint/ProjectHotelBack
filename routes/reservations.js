@@ -74,7 +74,7 @@ module.exports = ({ dbGet, dbRun, dbAll, verificarToken, soloPersonal, soloAdmin
 
 
     // GET /reservations/admin - Ver todas las reservas (CON FILTROS OPCIONALES)
-    router.get("/admin", verificarToken, soloPersonal, async (req, res) => {
+    router.get("/", verificarToken, soloPersonal, async (req, res) => {
         // ⬅️ EXPLICITO: Leer los filtros de búsqueda de la URL
         const { userId, roomId } = req.query; 
 
@@ -115,7 +115,7 @@ module.exports = ({ dbGet, dbRun, dbAll, verificarToken, soloPersonal, soloAdmin
         }
     });
 
-    // PUT /reservations/:id - Editar reserva
+    // PUT /reservations/admin/:id - Editar reserva
     router.put("/:id", verificarToken, soloPersonal, async (req, res) => {
         const { id } = req.params;
         const { fecha_inicio, fecha_fin, estado, habitacionId } = req.body;
@@ -159,7 +159,7 @@ module.exports = ({ dbGet, dbRun, dbAll, verificarToken, soloPersonal, soloAdmin
         }
     });
 
-    // DELETE /reservations/:id - Eliminar reserva
+    // DELETE /reservations/:id - Cancelar o Eliminar mi reserva
     router.delete("/:id", verificarToken, soloPersonal, async (req, res) => {
         const { id } = req.params;
         const usuarioId = req.user.id;
@@ -172,9 +172,9 @@ module.exports = ({ dbGet, dbRun, dbAll, verificarToken, soloPersonal, soloAdmin
 
             // 2. Lógica de Autorización: Solo el dueño O el administrador pueden eliminar
             const esDueno = reserva.usuarioId === usuarioId;
-            const esAdmin = userRole === 'admin';
+            const esPersonal = userRole === 'admin' || userRole === 'recepcionista';
 
-            if (!esDueno && !esAdmin) {
+            if (!esDueno && !esPersonal) {
                 return res.status(403).json({ error: "Acceso denegado. Solo puedes eliminar tus propias reservas." });
             }
             
