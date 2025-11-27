@@ -62,9 +62,16 @@ const initializeDatabase = () => {
             fecha_fin TEXT NOT NULL,
             estado TEXT DEFAULT 'pendiente',
             precio_total REAL NOT NULL,
+            creadoPor INTEGER,
             FOREIGN KEY(habitacionId) REFERENCES habitaciones(id) ON DELETE RESTRICT,
-            FOREIGN KEY(usuarioId) REFERENCES usuarios(id) ON DELETE RESTRICT
+            FOREIGN KEY(usuarioId) REFERENCES usuarios(id) ON DELETE RESTRICT,
+            FOREIGN KEY(creadoPor) REFERENCES usuarios(id) ON DELETE SET NULL
         )`);
+        
+        // Agregar columna creadoPor si no existe (para bases de datos existentes)
+        dbHotel.run(`ALTER TABLE reservas ADD COLUMN creadoPor INTEGER`, (err) => {
+            // Ignorar error si la columna ya existe
+        });
 
         dbHotel.get("SELECT COUNT(*) AS count FROM usuarios WHERE rol = 'admin'", async (err, row) => {
             if (err) return console.error("Error al verificar admin:", err.message);
