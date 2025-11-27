@@ -8,8 +8,9 @@ module.exports = ({ dbGet, dbRun, dbAll, verificarToken, soloPersonal, soloAdmin
 
     // POST /reservations
     router.post("/", verificarToken, async (req, res) => {
-        const { habitacionId, fecha_inicio, fecha_fin } = req.body;
-        const usuarioId = req.user.id;
+        const { habitacionId, fecha_inicio, fecha_fin, usuarioId: usuarioIdBody } = req.body;
+        // Si es admin y proporciona usuarioId, usar ese. Si no, usar el del token
+        const usuarioId = (req.user.rol === 'admin' && usuarioIdBody) ? usuarioIdBody : req.user.id;
 
         if (!habitacionId || !fecha_inicio || !fecha_fin) return res.status(400).json({ error: "Campos de reserva requeridos." });
 
@@ -48,9 +49,11 @@ module.exports = ({ dbGet, dbRun, dbAll, verificarToken, soloPersonal, soloAdmin
             }
             
             // --- 4. Inserción de la Reserva (Si pasa todas las verificaciones) ---
+            // Guardar quién creó la reserva (siempre se guarda el usuario que crea la reserva)
+            const creadoPor = req.user.id; // Siempre guardar el usuario que crea la reserva
             const reservationResult = await dbRun(
-                `INSERT INTO reservas (habitacionId, usuarioId, fecha_inicio, fecha_fin, precio_total, estado) VALUES (?, ?, ?, ?, ?, 'confirmada')`,
-                [habitacionId, usuarioId, fecha_inicio, fecha_fin, precio_total]
+                `INSERT INTO reservas (habitacionId, usuarioId, fecha_inicio, fecha_fin, precio_total, estado, creadoPor) VALUES (?, ?, ?, ?, ?, 'confirmada', ?)`,
+                [habitacionId, usuarioId, fecha_inicio, fecha_fin, precio_total, creadoPor]
             );
 
             res.json({ mensaje: "Reserva creada y confirmada con éxito.", id: reservationResult.lastID, precio_total });
@@ -83,10 +86,14 @@ module.exports = ({ dbGet, dbRun, dbAll, verificarToken, soloPersonal, soloAdmin
                 r.*, 
                 u.nombre AS nombre_usuario, 
                 u.email AS email_usuario,
-                h.numero AS numero_habitacion
+                h.numero AS numero_habitacion,
+                h.precio_noche,
+                creador.nombre AS nombre_creador,
+                creador.email AS email_creador
             FROM reservas r
             JOIN usuarios u ON r.usuarioId = u.id
             JOIN habitaciones h ON r.habitacionId = h.id
+            LEFT JOIN usuarios creador ON r.creadoPor = creador.id
         `;
         let params = [];
         let whereClause = [];
@@ -125,7 +132,20 @@ module.exports = ({ dbGet, dbRun, dbAll, verificarToken, soloPersonal, soloAdmin
         }
 
         try {
-            // --- 1. Verificación de Conflicto (Integridad de Datos) ---
+            // --- 1. Obtener información de la habitación para recalcular precio ---
+            const roomInfo = await dbGet("SELECT * FROM habitaciones WHERE id = ?", [habitacionId]);
+            if (!roomInfo) return res.status(404).json({ error: "Habitación no encontrada." });
+
+            // --- 2. Calcular nuevo precio total basado en las fechas ---
+            const inicio = new Date(fecha_inicio);
+            const fin = new Date(fecha_fin);
+            const diffTime = Math.abs(fin - inicio);
+            const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+            if (diffDays <= 0) return res.status(400).json({ error: "Fechas inválidas o duración cero." });
+            
+            const nuevo_precio_total = roomInfo.precio_noche * diffDays;
+
+            // --- 3. Verificación de Conflicto (Integridad de Datos) ---
             // Buscamos conflictos con OTRAS reservas (id != ?)
             const conflictSql = `
                 SELECT id FROM reservas 
@@ -144,14 +164,14 @@ module.exports = ({ dbGet, dbRun, dbAll, verificarToken, soloPersonal, soloAdmin
                 });
             }
             
-            // --- 2. Ejecución de la Actualización ---
+            // --- 4. Ejecución de la Actualización (incluyendo nuevo precio) ---
             const result = await dbRun(
-                "UPDATE reservas SET habitacionId = ?, fecha_inicio = ?, fecha_fin = ?, estado = ? WHERE id = ?",
-                [habitacionId, fecha_inicio, fecha_fin, estado, id]
+                "UPDATE reservas SET habitacionId = ?, fecha_inicio = ?, fecha_fin = ?, estado = ?, precio_total = ? WHERE id = ?",
+                [habitacionId, fecha_inicio, fecha_fin, estado, nuevo_precio_total, id]
             );
 
             if (result.changes === 0) return res.status(404).json({ error: "Reserva no encontrada o sin cambios realizados." });
-            res.json({ mensaje: `Reserva con ID ${id} actualizada a estado: ${estado}.` });
+            res.json({ mensaje: `Reserva con ID ${id} actualizada a estado: ${estado}.`, precio_total: nuevo_precio_total });
 
         } catch (error) {
             console.error("Error al actualizar reserva:", error);
