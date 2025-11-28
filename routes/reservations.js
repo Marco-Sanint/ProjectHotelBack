@@ -9,8 +9,24 @@ module.exports = ({ dbGet, dbRun, dbAll, verificarToken, soloPersonal, soloAdmin
     // POST /reservations
     router.post("/", verificarToken, async (req, res) => {
         const { habitacionId, fecha_inicio, fecha_fin, usuarioId: usuarioIdBody } = req.body;
-        // Si es admin y proporciona usuarioId, usar ese. Si no, usar el del token
-        const usuarioId = (req.user.rol === 'admin' && usuarioIdBody) ? usuarioIdBody : req.user.id;
+        const creatorUser = req.user; // El usuario que realiza la petición (del token)
+        
+        let usuarioId = creatorUser.id; // Por defecto, es el creador de la solicitud
+
+        if (creatorUser.rol === 'admin' || creatorUser.rol === 'recepcionista') {
+            if (!usuarioIdBody) {
+                return res.status(400).json({ error: "El personal de hotel debe especificar el 'usuarioId' del cliente para crear una reserva." });
+            }
+            
+            if (usuarioIdBody === creatorUser.id) {
+                return res.status(403).json({ error: "El personal no puede crear reservas a su propio nombre." });
+            }
+            usuarioId = usuarioIdBody; 
+        } else {
+            if (usuarioIdBody && usuarioIdBody !== creatorUser.id) {
+                return res.status(403).json({ error: "Los clientes solo pueden reservar para sí mismos." });
+            }
+        }
 
         if (!habitacionId || !fecha_inicio || !fecha_fin) return res.status(400).json({ error: "Campos de reserva requeridos." });
 
@@ -123,7 +139,7 @@ module.exports = ({ dbGet, dbRun, dbAll, verificarToken, soloPersonal, soloAdmin
     });
 
     // PUT /reservations/:id - Editar reserva
-    router.put("/:id", verificarToken, soloPersonal, async (req, res) => {
+    router.put("/:id", verificarToken, async (req, res) => {
         const { id } = req.params;
         const { fecha_inicio, fecha_fin, estado, habitacionId } = req.body;
 
