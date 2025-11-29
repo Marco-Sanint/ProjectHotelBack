@@ -9,8 +9,18 @@ module.exports = ({ dbGet, dbRun, dbAll, verificarToken, soloPersonal, soloAdmin
     // POST /reservations
     router.post("/", verificarToken, async (req, res) => {
         const { habitacionId, fecha_inicio, fecha_fin, usuarioId: usuarioIdBody } = req.body;
-        // Si es admin y proporciona usuarioId, usar ese. Si no, usar el del token
-        const usuarioId = (req.user.rol === 'admin' && usuarioIdBody) ? usuarioIdBody : req.user.id;
+        
+        // Debug: Ver qué fechas se están recibiendo
+        console.log('📥 Fechas recibidas en el servidor:', {
+            fecha_inicio,
+            fecha_fin,
+            tipo_inicio: typeof fecha_inicio,
+            tipo_fin: typeof fecha_fin,
+            body_completo: req.body
+        });
+        
+        // Si es admin o recepcionista y proporciona usuarioId, usar ese. Si no, usar el del token
+        const usuarioId = ((req.user.rol === 'admin' || req.user.rol === 'recepcionista') && usuarioIdBody) ? usuarioIdBody : req.user.id;
 
         if (!habitacionId || !fecha_inicio || !fecha_fin) return res.status(400).json({ error: "Campos de reserva requeridos." });
 
@@ -20,9 +30,20 @@ module.exports = ({ dbGet, dbRun, dbAll, verificarToken, soloPersonal, soloAdmin
             if (!roomInfo || roomInfo.disponible === 0) return res.status(404).json({ error: "Habitación no disponible (generalmente)." });
 
             // --- 2. Validación de Fechas ---
-            const inicio = new Date(fecha_inicio);
-            const fin = new Date(fecha_fin);
-            const diffTime = Math.abs(fin - inicio);
+            // Trabajar con strings YYYY-MM-DD directamente para evitar problemas de zona horaria
+            if (!/^\d{4}-\d{2}-\d{2}$/.test(fecha_inicio) || !/^\d{4}-\d{2}-\d{2}$/.test(fecha_fin)) {
+                return res.status(400).json({ error: "Formato de fecha inválido. Use formato YYYY-MM-DD." });
+            }
+            
+            // Comparar fechas como strings para validar orden
+            if (fecha_fin <= fecha_inicio) {
+                return res.status(400).json({ error: "La fecha de fin debe ser posterior a la fecha de inicio." });
+            }
+            
+            // Calcular días de diferencia usando fechas UTC para evitar problemas de zona horaria
+            const inicioUTC = new Date(fecha_inicio + 'T00:00:00.000Z');
+            const finUTC = new Date(fecha_fin + 'T00:00:00.000Z');
+            const diffTime = Math.abs(finUTC - inicioUTC);
             const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
             if (diffDays <= 0) return res.status(400).json({ error: "Fechas inválidas o duración cero." });
 
@@ -51,16 +72,54 @@ module.exports = ({ dbGet, dbRun, dbAll, verificarToken, soloPersonal, soloAdmin
             // --- 4. Inserción de la Reserva (Si pasa todas las verificaciones) ---
             // Guardar quién creó la reserva (siempre se guarda el usuario que crea la reserva)
             const creadoPor = req.user.id; // Siempre guardar el usuario que crea la reserva
+            
+            // Debug: Ver qué se va a guardar
+            console.log('💾 Datos que se van a guardar en la BD:', {
+                habitacionId,
+                usuarioId,
+                fecha_inicio,
+                fecha_fin,
+                precio_total,
+                creadoPor
+            });
+            
             const reservationResult = await dbRun(
                 `INSERT INTO reservas (habitacionId, usuarioId, fecha_inicio, fecha_fin, precio_total, estado, creadoPor) VALUES (?, ?, ?, ?, ?, 'confirmada', ?)`,
                 [habitacionId, usuarioId, fecha_inicio, fecha_fin, precio_total, creadoPor]
             );
+            
+            // Debug: Verificar qué se guardó
+            const savedReservation = await dbGet("SELECT * FROM reservas WHERE id = ?", [reservationResult.lastID]);
+            console.log('✅ Reserva guardada en la BD:', savedReservation);
 
             res.json({ mensaje: "Reserva creada y confirmada con éxito.", id: reservationResult.lastID, precio_total });
 
         } catch (error) {
             console.error("Error en la creación de reserva:", error);
             res.status(500).json({ error: "Error al procesar la reserva." });
+        }
+    });
+
+    // GET /reservations/availability/:roomId - Verificar disponibilidad de fechas (público para clientes)
+    // IMPORTANTE: Esta ruta debe ir ANTES de /my y /admin para evitar conflictos de routing
+    router.get("/availability/:roomId", verificarToken, async (req, res) => {
+        const { roomId } = req.params;
+        console.log(`🔍 Verificando disponibilidad para habitación ${roomId}`);
+        try {
+            // Obtener solo las reservas confirmadas o pendientes de la habitación
+            const rows = await dbAll(
+                `SELECT id, fecha_inicio, fecha_fin, estado 
+                 FROM reservas 
+                 WHERE habitacionId = ? 
+                 AND (estado = 'confirmada' OR estado = 'pendiente')
+                 ORDER BY fecha_inicio ASC`,
+                [roomId]
+            );
+            console.log(`✅ Disponibilidad verificada: ${rows.length} reservas encontradas`);
+            res.json({ reservas: rows });
+        } catch (err) {
+            console.error("❌ Error al verificar disponibilidad:", err);
+            res.status(500).json({ error: "Error al verificar disponibilidad." });
         }
     });
 
@@ -137,9 +196,20 @@ module.exports = ({ dbGet, dbRun, dbAll, verificarToken, soloPersonal, soloAdmin
             if (!roomInfo) return res.status(404).json({ error: "Habitación no encontrada." });
 
             // --- 2. Calcular nuevo precio total basado en las fechas ---
-            const inicio = new Date(fecha_inicio);
-            const fin = new Date(fecha_fin);
-            const diffTime = Math.abs(fin - inicio);
+            // Trabajar con strings YYYY-MM-DD directamente para evitar problemas de zona horaria
+            if (!/^\d{4}-\d{2}-\d{2}$/.test(fecha_inicio) || !/^\d{4}-\d{2}-\d{2}$/.test(fecha_fin)) {
+                return res.status(400).json({ error: "Formato de fecha inválido. Use formato YYYY-MM-DD." });
+            }
+            
+            // Comparar fechas como strings para validar orden
+            if (fecha_fin <= fecha_inicio) {
+                return res.status(400).json({ error: "La fecha de fin debe ser posterior a la fecha de inicio." });
+            }
+            
+            // Calcular días de diferencia usando fechas UTC para evitar problemas de zona horaria
+            const inicioUTC = new Date(fecha_inicio + 'T00:00:00.000Z');
+            const finUTC = new Date(fecha_fin + 'T00:00:00.000Z');
+            const diffTime = Math.abs(finUTC - inicioUTC);
             const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
             if (diffDays <= 0) return res.status(400).json({ error: "Fechas inválidas o duración cero." });
             
@@ -190,11 +260,12 @@ module.exports = ({ dbGet, dbRun, dbAll, verificarToken, soloPersonal, soloAdmin
             const reserva = await dbGet("SELECT usuarioId FROM reservas WHERE id = ?", [id]);
             if (!reserva) return res.status(404).json({ error: "Reserva no encontrada." });
 
-            // 2. Lógica de Autorización: Solo el dueño O el administrador pueden eliminar
+            // 2. Lógica de Autorización: Solo el dueño, administrador o recepcionista pueden eliminar
             const esDueno = reserva.usuarioId === usuarioId;
             const esAdmin = userRole === 'admin';
+            const esRecepcionista = userRole === 'recepcionista';
 
-            if (!esDueno && !esAdmin) {
+            if (!esDueno && !esAdmin && !esRecepcionista) {
                 return res.status(403).json({ error: "Acceso denegado. Solo puedes eliminar tus propias reservas." });
             }
             

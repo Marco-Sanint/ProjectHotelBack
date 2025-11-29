@@ -9,6 +9,7 @@ const { dbGet, dbRun, dbAll, initializeDatabase, SALT_ROUNDS } = require('./db')
 const userRoutes = require('./routes/users');
 const roomRoutes = require('./routes/rooms');
 const reservationRoutes = require('./routes/reservations');
+const paymentRoutes = require('./routes/payments');
 const authMiddleware = require('./middleware/auth'); // ⬅️ Nuevo: Mover Middlewares
 
 const app = express();
@@ -41,6 +42,7 @@ const soloPersonal = (req, res, next) => {
 app.use('/users', userRoutes({ dbGet, dbRun, dbAll, verificarToken, soloAdmin, SECRET_KEY, bcrypt, SALT_ROUNDS }));
 app.use('/rooms', roomRoutes({ dbGet, dbRun, dbAll, verificarToken, soloAdmin }));
 app.use('/reservations', reservationRoutes({ dbGet, dbRun, dbAll, verificarToken, soloPersonal, soloAdmin }));
+app.use('/payments', paymentRoutes({ dbGet, dbRun, dbAll, verificarToken, soloPersonal }));
 
 // 6. Ruta Raíz
 app.get("/", (req, res) => {
