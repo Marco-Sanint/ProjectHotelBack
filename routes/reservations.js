@@ -9,18 +9,8 @@ module.exports = ({ dbGet, dbRun, dbAll, verificarToken, soloPersonal, soloAdmin
     // POST /reservations
     router.post("/", verificarToken, async (req, res) => {
         const { habitacionId, fecha_inicio, fecha_fin, usuarioId: usuarioIdBody } = req.body;
-        
-        // Debug: Ver qué fechas se están recibiendo
-        console.log('📥 Fechas recibidas en el servidor:', {
-            fecha_inicio,
-            fecha_fin,
-            tipo_inicio: typeof fecha_inicio,
-            tipo_fin: typeof fecha_fin,
-            body_completo: req.body
-        });
-        
-        // Si es admin o recepcionista y proporciona usuarioId, usar ese. Si no, usar el del token
-        const usuarioId = ((req.user.rol === 'admin' || req.user.rol === 'recepcionista') && usuarioIdBody) ? usuarioIdBody : req.user.id;
+        // Si es admin y proporciona usuarioId, usar ese. Si no, usar el del token
+        const usuarioId = (req.user.rol === 'admin' && usuarioIdBody) ? usuarioIdBody : req.user.id;
 
         if (!habitacionId || !fecha_inicio || !fecha_fin) return res.status(400).json({ error: "Campos de reserva requeridos." });
 
@@ -182,7 +172,7 @@ module.exports = ({ dbGet, dbRun, dbAll, verificarToken, soloPersonal, soloAdmin
     });
 
     // PUT /reservations/:id - Editar reserva
-    router.put("/:id", verificarToken, soloPersonal, async (req, res) => {
+    router.put("/:id", verificarToken, async (req, res) => {
         const { id } = req.params;
         const { fecha_inicio, fecha_fin, estado, habitacionId } = req.body;
 
