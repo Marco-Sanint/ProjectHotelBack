@@ -73,22 +73,6 @@ const initializeDatabase = () => {
             // Ignorar error si la columna ya existe
         });
 
-        // Tabla de pagos
-        dbHotel.run(`CREATE TABLE IF NOT EXISTS pagos (
-            id INTEGER PRIMARY KEY,
-            reservaId INTEGER,
-            usuarioId INTEGER NOT NULL,
-            numero_tarjeta TEXT NOT NULL,
-            nombre_titular TEXT NOT NULL,
-            fecha_expiracion TEXT NOT NULL,
-            cvv TEXT NOT NULL,
-            monto REAL NOT NULL,
-            estado TEXT DEFAULT 'completado',
-            fecha_pago TEXT DEFAULT (datetime('now')),
-            FOREIGN KEY(reservaId) REFERENCES reservas(id) ON DELETE SET NULL,
-            FOREIGN KEY(usuarioId) REFERENCES usuarios(id) ON DELETE RESTRICT
-        )`);
-
         dbHotel.get("SELECT COUNT(*) AS count FROM usuarios WHERE rol = 'admin'", async (err, row) => {
             if (err) return console.error("Error al verificar admin:", err.message);
             
