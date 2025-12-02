@@ -21,7 +21,11 @@ initializeDatabase();
 
 // 3. Middlewares Globales
 app.use(cors({
-    origin: ["http://localhost:3000", "http://localhost:3001"],
+    origin: [
+        "http://localhost:3000",
+        "http://localhost:3001",
+        "https://frontproject-omega.vercel.app"
+    ],
     credentials: true
 }));
 app.use(express.json());
