@@ -9,8 +9,8 @@ module.exports = ({ dbGet, dbRun, dbAll, verificarToken, soloPersonal, soloAdmin
     // POST /reservations
     router.post("/", verificarToken, async (req, res) => {
         const { habitacionId, fecha_inicio, fecha_fin, usuarioId: usuarioIdBody } = req.body;
-        // Si es admin y proporciona usuarioId, usar ese. Si no, usar el del token
-        const usuarioId = (req.user.rol === 'admin' && usuarioIdBody) ? usuarioIdBody : req.user.id;
+        // Si es admin o recepcionista y proporciona usuarioId, usar ese. Si no, usar el del token
+        const usuarioId = ((req.user.rol === 'admin' || req.user.rol === 'recepcionista') && usuarioIdBody) ? usuarioIdBody : req.user.id;
 
         if (!habitacionId || !fecha_inicio || !fecha_fin) return res.status(400).json({ error: "Campos de reserva requeridos." });
 
