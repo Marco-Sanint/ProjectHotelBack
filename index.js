@@ -20,8 +20,13 @@ const SECRET_KEY = "hotelTrivago"; // Mantener variables de entorno aquí o en .
 initializeDatabase();
 
 // 3. Middlewares Globales
+// Configuración de CORS: permite localhost en desarrollo y todos los orígenes en producción
+const allowedOrigins = process.env.NODE_ENV === 'production'
+    ? true // En producción, permite todos los orígenes (incluyendo Vercel)
+    : ["http://localhost:3000", "http://localhost:3001"]; // En desarrollo, solo localhost
+
 app.use(cors({
-    origin: ["http://localhost:3000", "http://localhost:3001"],
+    origin: allowedOrigins,
     credentials: true
 }));
 app.use(express.json());
