@@ -13,20 +13,32 @@ const paymentRoutes = require('./routes/payments');
 const authMiddleware = require('./middleware/auth'); // ⬅️ Nuevo: Mover Middlewares
 
 const app = express();
-const PORT = 3000;
-const SECRET_KEY = "hotelTrivago"; // Mantener variables de entorno aquí o en .env
+const PORT = process.env.PORT || 3000;
+const SECRET_KEY = process.env.SECRET_KEY || "hotelTrivago"; // Usar variable de entorno en producción
 
 // 2. Inicializar la base de datos
 initializeDatabase();
 
 // 3. Middlewares Globales
-// Configuración de CORS: permite localhost en desarrollo y todos los orígenes en producción
-const allowedOrigins = process.env.NODE_ENV === 'production'
-    ? true // En producción, permite todos los orígenes (incluyendo Vercel)
+// Configuración de CORS: permite orígenes desde variable de entorno o localhost en desarrollo
+const allowedOrigins = process.env.ALLOWED_ORIGINS
+    ? process.env.ALLOWED_ORIGINS.split(',').map(origin => origin.trim())
     : ["http://localhost:3000", "http://localhost:3001"]; // En desarrollo, solo localhost
 
 app.use(cors({
-    origin: allowedOrigins,
+    origin: (origin, callback) => {
+        // Permitir requests sin origin (como mobile apps o Postman) solo en desarrollo
+        if (!origin) {
+            return callback(null, process.env.NODE_ENV !== 'production');
+        }
+        
+        // Verificar si el origen está en la lista permitida
+        if (allowedOrigins.includes(origin)) {
+            callback(null, true);
+        } else {
+            callback(new Error('Not allowed by CORS'));
+        }
+    },
     credentials: true
 }));
 app.use(express.json());

@@ -52,7 +52,7 @@ module.exports = ({ dbGet, dbRun, dbAll, verificarToken, soloAdmin, SECRET_KEY, 
                 httpOnly: true, 
                 secure: process.env.NODE_ENV === 'production', 
                 maxAge: 8 * 3600000,
-                sameSite: 'Lax'
+                sameSite: process.env.NODE_ENV === 'production' ? 'None' : 'Lax'
             });
 
             res.json({ mensaje: "Login exitoso", usuario: payload });
